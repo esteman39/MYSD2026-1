@@ -1,0 +1,16 @@
+-- =====================================================
+-- EGO - xTablas (eliminar tablas)
+-- Oracle SQL Developer
+-- =====================================================
+
+DROP TABLE Reseña CASCADE CONSTRAINTS;
+DROP TABLE Calificacion CASCADE CONSTRAINTS;
+DROP TABLE ListaContenido CASCADE CONSTRAINTS;
+DROP TABLE ListaPendientes CASCADE CONSTRAINTS;
+DROP TABLE Lista CASCADE CONSTRAINTS;
+DROP TABLE Etiqueta CASCADE CONSTRAINTS;
+DROP TABLE Personal CASCADE CONSTRAINTS;
+DROP TABLE Serie CASCADE CONSTRAINTS;
+DROP TABLE Pelicula CASCADE CONSTRAINTS;
+DROP TABLE Contenido CASCADE CONSTRAINTS;   
+DROP TABLE Usuario CASCADE CONSTRAINTS;
