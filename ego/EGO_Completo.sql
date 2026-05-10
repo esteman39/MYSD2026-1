@@ -185,6 +185,14 @@ CREATE TABLE PELICULA(
     presupuesto DECIMAL(15, 2) NOT NULL,
     recaudacion DECIMAL(15, 2) NOT NULL
 );
+
+-- -----------------------------------------------------
+-- TABLA: ETIQUETA_CONTENIDO
+-- -----------------------------------------------------
+CREATE TABLE ETIQUETA_CONTENIDO (
+    id_etiqueta VARCHAR2(50) NOT NULL,
+    Id_content VARCHAR2(255) NOT NULL
+);
  
 -- Verificar que todas las tablas se crearon
 SELECT table_name
@@ -192,7 +200,7 @@ FROM user_tables
 WHERE table_name IN (
     'USUARIOS','CONTENIDO','ETIQUETAS','LISTA','LISTA_CONTENIDO',
     'LISTA_PENDIENTE','CALIFICACIONES','RESEÑAS','PERSONAL','ROL',
-    'PERSONAL_ROL','PERSONAL_CONTENIDO','SERIE','PELICULA'
+    'PERSONAL_ROL','PERSONAL_CONTENIDO','SERIE','PELICULA', 'ETIQUETA_CONTENIDO'
 )
 ORDER BY table_name;
  
@@ -204,6 +212,7 @@ ORDER BY table_name;
 ALTER TABLE USUARIOS ADD PRIMARY KEY (Id_usuario);
 ALTER TABLE CONTENIDO ADD PRIMARY KEY (Id_content);
 ALTER TABLE ETIQUETAS ADD PRIMARY KEY (id_etiqueta);
+ALTER TABLE ETIQUETA_CONTENIDO ADD PRIMARY KEY (id_etiqueta, Id_content);
 ALTER TABLE LISTA ADD PRIMARY KEY (Id_lista);
 ALTER TABLE LISTA_CONTENIDO ADD PRIMARY KEY (Id_lista, id_usuario, Id_content);
 ALTER TABLE LISTA_PENDIENTE ADD PRIMARY KEY (Id_lista, Id_usuario);
@@ -313,6 +322,16 @@ ALTER TABLE SERIE
 -- PELICULA → CONTENIDO
 ALTER TABLE PELICULA
     ADD CONSTRAINT fk_pelicula_contenido
+    FOREIGN KEY (Id_content) REFERENCES CONTENIDO(Id_content) ON DELETE CASCADE;
+
+-- ETIQUETA_CONTENIDO → ETIQUETAS   
+ALTER TABLE ETIQUETA_CONTENIDO
+    ADD CONSTRAINT fk_etiqueta_contenido_etiquetas
+    FOREIGN KEY (id_etiqueta) REFERENCES ETIQUETAS(id_etiqueta) ON DELETE CASCADE;
+
+-- ETIQUETA_CONTENIDO → CONTENIDO
+ALTER TABLE ETIQUETA_CONTENIDO
+    ADD CONSTRAINT fk_etiqueta_contenido_contenido
     FOREIGN KEY (Id_content) REFERENCES CONTENIDO(Id_content) ON DELETE CASCADE;
  
  
@@ -537,6 +556,13 @@ INSERT INTO PELICULA (Id_content, presupuesto, recaudacion) VALUES ('cont_002', 
 INSERT INTO PELICULA (Id_content, presupuesto, recaudacion) VALUES ('cont_003', 6000000, 246000000);
 INSERT INTO PELICULA (Id_content, presupuesto, recaudacion) VALUES ('cont_004', 11000000, 258000000);
 INSERT INTO PELICULA (Id_content, presupuesto, recaudacion) VALUES ('cont_005', 150000000, 375000000);
+
+-- 16. ETIQUETA_CONTENIDO
+INSERT INTO ETIQUETA_CONTENIDO (id_etiqueta, Id_content) VALUES ('etiq_001', 'cont_002');
+INSERT INTO ETIQUETA_CONTENIDO (id_etiqueta, Id_content) VALUES ('etiq_001', 'cont_009');
+INSERT INTO ETIQUETA_CONTENIDO (id_etiqueta, Id_content) VALUES ('etiq_002', 'cont_001');
+INSERT INTO ETIQUETA_CONTENIDO (id_etiqueta, Id_content) VALUES ('etiq_002', 'cont_006');
+INSERT INTO ETIQUETA_CONTENIDO (id_etiqueta, Id_content) VALUES ('etiq_003', 'cont_005');
  
 COMMIT;
  
@@ -1432,6 +1458,947 @@ COMMIT;
 -- )
 -- ORDER BY trigger_name;
  
+
+ 
+ -- =====================================================
+-- SECCIÓN 20: ÍNDICES (Indices)
+-- =====================================================
+
+-- Índice sobre Id_content en Calificaciones
+-- Acelera el cálculo de promedios y conteo de calificaciones por contenido
+CREATE INDEX idx_calificaciones_content
+    ON Calificaciones(Id_content);
+
+-- Índice sobre Id_content en RESEÑAS
+-- Acelera la consulta de reseñas asociadas a un contenido específico
+CREATE INDEX idx_resenas_content
+    ON RESEÑAS(Id_content);
+
+-- Índice sobre genero en CONTENIDO
+-- Acelera los filtros por género en el catálogo
+CREATE INDEX idx_contenido_genero
+    ON CONTENIDO(genero);
+
+-- Índice sobre Id_content en PERSONAL_CONTENIDO
+-- Acelera la consulta de filmografías y personal asociado a un contenido
+CREATE INDEX idx_personal_contenido_content
+    ON PERSONAL_CONTENIDO(Id_content);
+
+-- Índice sobre id_usuario en LISTA_CONTENIDO
+-- Acelera la consulta de listas y contenidos asociados a un usuario
+CREATE INDEX idx_lista_contenido_usuario
+    ON LISTA_CONTENIDO(id_usuario);
+
+-- Verificar creación de índices
+SELECT index_name, table_name, status
+FROM user_indexes
+WHERE index_name IN (
+    'IDX_CALIFICACIONES_CONTENT',
+    'IDX_RESENAS_CONTENT',
+    'IDX_CONTENIDO_GENERO',
+    'IDX_PERSONAL_CONTENIDO_CONTENT',
+    'IDX_LISTA_CONTENIDO_USUARIO'
+)
+ORDER BY table_name;
+
+
+-- =====================================================
+-- SECCIÓN 21: VISTAS (Vistas)
+-- =====================================================
+
+-- -----------------------------------------------------
+-- VISTA 1: VW_CONTENIDO_CALIFICADO
+-- Muestra cada contenido con su promedio de estrellas
+-- y total de calificaciones recibidas
+-- -----------------------------------------------------
+CREATE OR REPLACE VIEW VW_CONTENIDO_CALIFICADO AS
+SELECT
+    c.Id_content,
+    c.nombre,
+    c.genero,
+    c.Año_estreno,
+    c.pais,
+    c.Clasificacion,
+    ROUND(AVG(cal.estrellas), 2)    AS promedio_estrellas,
+    COUNT(cal.Id_calificacion)      AS total_calificaciones
+FROM CONTENIDO c
+LEFT JOIN Calificaciones cal ON c.Id_content = cal.Id_content
+GROUP BY
+    c.Id_content,
+    c.nombre,
+    c.genero,
+    c.Año_estreno,
+    c.pais,
+    c.Clasificacion;
+
+-- -----------------------------------------------------
+-- VISTA 2: VW_RESENAS_DETALLE
+-- Muestra reseñas con nombre de usuario y
+-- nombre del contenido al que pertenecen
+-- -----------------------------------------------------
+CREATE OR REPLACE VIEW VW_RESENAS_DETALLE AS
+SELECT
+    r.id_reseña,
+    u.Id_usuario,
+    u.Email,
+    c.Id_content,
+    c.nombre          AS nombre_contenido,
+    c.genero,
+    r.comentario,
+    r.fecha_reseña
+FROM RESEÑAS r
+LEFT JOIN USUARIOS u  ON r.Id_usuario  = u.Id_usuario
+LEFT JOIN CONTENIDO c ON r.Id_content  = c.Id_content
+ORDER BY r.fecha_reseña DESC;
+
+-- -----------------------------------------------------
+-- VISTA 3: VW_FILMOGRAFIA_PERSONAL
+-- Muestra cada miembro del personal con todos
+-- sus contenidos asociados y su rol
+-- -----------------------------------------------------
+CREATE OR REPLACE VIEW VW_FILMOGRAFIA_PERSONAL AS
+SELECT
+    p.Id_personal,
+    p.nombre          AS nombre_personal,
+    p.rol,
+    p.nacionalidad,
+    c.Id_content,
+    c.nombre          AS nombre_contenido,
+    c.genero,
+    c.Año_estreno
+FROM PERSONAL p
+JOIN PERSONAL_CONTENIDO pc ON p.Id_personal  = pc.Id_personal
+JOIN CONTENIDO c            ON pc.Id_content = c.Id_content
+ORDER BY p.nombre, c.Año_estreno DESC;
+
+-- -----------------------------------------------------
+-- VISTA 4: VW_LISTAS_USUARIO
+-- Muestra las listas de cada usuario con los
+-- contenidos que tienen dentro y su estado
+-- -----------------------------------------------------
+CREATE OR REPLACE VIEW VW_LISTAS_USUARIO AS
+SELECT
+    u.Id_usuario,
+    u.Email,
+    l.Id_lista,
+    l.esPrivada,
+    lc.nombre_lista,
+    lc.descripcion,
+    lc.orden,
+    lc.fecha_agregado,
+    c.Id_content,
+    c.nombre          AS nombre_contenido,
+    c.genero,
+    c.Año_estreno
+FROM USUARIOS u
+JOIN LISTA          l  ON u.Id_usuario   = l.Id_usuario
+JOIN LISTA_CONTENIDO lc ON l.Id_lista   = lc.Id_lista
+LEFT JOIN CONTENIDO  c  ON lc.Id_content = c.Id_content
+ORDER BY u.Id_usuario, l.Id_lista, lc.orden;
+
+-- Verificar creación de vistas
+SELECT view_name, status
+FROM user_views
+WHERE view_name IN (
+    'VW_CONTENIDO_CALIFICADO',
+    'VW_RESENAS_DETALLE',
+    'VW_FILMOGRAFIA_PERSONAL',
+    'VW_LISTAS_USUARIO'
+)
+ORDER BY view_name;
+
+
+-- =====================================================
+-- SECCIÓN 22: CONSULTAS CON ÍNDICES Y VISTAS (IndicesVistasOK)
+-- =====================================================
+
+-- Consulta IV-1: Top 10 contenidos mejor calificados (usa VW_CONTENIDO_CALIFICADO + idx_calificaciones_content)
+SELECT nombre, genero, Año_estreno, promedio_estrellas, total_calificaciones
+FROM VW_CONTENIDO_CALIFICADO
+WHERE total_calificaciones > 0
+ORDER BY promedio_estrellas DESC
+FETCH FIRST 10 ROWS ONLY;
+
+-- Consulta IV-2: Reseñas de un contenido específico con detalle de usuario (usa VW_RESENAS_DETALLE + idx_resenas_content)
+SELECT id_reseña, Id_usuario, Email, comentario, fecha_reseña
+FROM VW_RESENAS_DETALLE
+WHERE Id_content = 'cont_002'
+ORDER BY fecha_reseña DESC;
+
+-- Consulta IV-3: Filmografía completa de un director (usa VW_FILMOGRAFIA_PERSONAL + idx_personal_contenido_content)
+SELECT nombre_personal, rol, nombre_contenido, genero, Año_estreno
+FROM VW_FILMOGRAFIA_PERSONAL
+WHERE nombre_personal = 'Christopher Nolan'
+ORDER BY Año_estreno DESC;
+
+-- Consulta IV-4: Contenidos de las listas de un usuario (usa VW_LISTAS_USUARIO + idx_lista_contenido_usuario)
+SELECT Id_lista, nombre_lista, nombre_contenido, genero, orden, fecha_agregado
+FROM VW_LISTAS_USUARIO
+WHERE Id_usuario = 'user_001'
+ORDER BY Id_lista, orden;
+
+-- Consulta IV-5: Catálogo filtrado por género (usa idx_contenido_genero)
+SELECT nombre, Año_estreno, pais, Clasificacion, promedio_estrellas
+FROM VW_CONTENIDO_CALIFICADO
+WHERE genero = 'Drama'
+ORDER BY promedio_estrellas DESC NULLS LAST;
+
+
+-- =====================================================
+-- SECCIÓN 23: ELIMINACIÓN DE ÍNDICES Y VISTAS (XIndicesVistas)
+-- =====================================================
+
+-- DROP INDEX idx_calificaciones_content;
+-- DROP INDEX idx_resenas_content;
+-- DROP INDEX idx_contenido_genero;
+-- DROP INDEX idx_personal_contenido_content;
+-- DROP INDEX idx_lista_contenido_usuario;
+
+-- DROP VIEW VW_CONTENIDO_CALIFICADO;
+-- DROP VIEW VW_RESENAS_DETALLE;
+-- DROP VIEW VW_FILMOGRAFIA_PERSONAL;
+-- DROP VIEW VW_LISTAS_USUARIO;
+
+-- Verificar eliminación (debe retornar 0 filas)
+-- SELECT index_name FROM user_indexes
+-- WHERE index_name IN (
+--     'IDX_CALIFICACIONES_CONTENT','IDX_RESENAS_CONTENT',
+--     'IDX_CONTENIDO_GENERO','IDX_PERSONAL_CONTENIDO_CONTENT',
+--     'IDX_LISTA_CONTENIDO_USUARIO'
+-- );
+-- SELECT view_name FROM user_views
+-- WHERE view_name IN (
+--     'VW_CONTENIDO_CALIFICADO','VW_RESENAS_DETALLE',
+--     'VW_FILMOGRAFIA_PERSONAL','VW_LISTAS_USUARIO'
+-- );
+
+
+-- =====================================================
+-- SECCIÓN 24: ESPECIFICACIÓN DE PAQUETES (CRUDE)
+-- =====================================================
+
+-- -----------------------------------------------------
+-- PAQUETE 1: PKG_USUARIOS
+-- -----------------------------------------------------
+CREATE OR REPLACE PACKAGE PKG_USUARIOS AS
+
+    -- Agregar un nuevo usuario
+    PROCEDURE agregar_usuario(
+        p_id_usuario      IN USUARIOS.Id_usuario%TYPE,
+        p_email           IN USUARIOS.Email%TYPE,
+        p_fecha_registro  IN USUARIOS.Fecha_registro%TYPE,
+        p_fecha_nac       IN USUARIOS.fecha_nacimiento%TYPE
+    );
+
+    -- Consultar un usuario por ID (retorna datos por parámetros OUT)
+    PROCEDURE consultar_usuario(
+        p_id_usuario      IN  USUARIOS.Id_usuario%TYPE,
+        p_email           OUT USUARIOS.Email%TYPE,
+        p_fecha_registro  OUT USUARIOS.Fecha_registro%TYPE,
+        p_fecha_nac       OUT USUARIOS.fecha_nacimiento%TYPE
+    );
+
+    -- Listar todos los usuarios (retorna cursor)
+    FUNCTION listar_usuarios
+        RETURN SYS_REFCURSOR;
+
+    -- Modificar email de un usuario
+    PROCEDURE modificar_email(
+        p_id_usuario  IN USUARIOS.Id_usuario%TYPE,
+        p_nuevo_email IN USUARIOS.Email%TYPE
+    );
+
+    -- Eliminar un usuario por ID
+    PROCEDURE eliminar_usuario(
+        p_id_usuario IN USUARIOS.Id_usuario%TYPE
+    );
+
+END PKG_USUARIOS;
+/
+
+-- -----------------------------------------------------
+-- PAQUETE 2: PKG_CONTENIDO
+-- -----------------------------------------------------
+CREATE OR REPLACE PACKAGE PKG_CONTENIDO AS
+
+    -- Agregar contenido base + película
+    PROCEDURE agregar_pelicula(
+        p_id_content    IN CONTENIDO.Id_content%TYPE,
+        p_nombre        IN CONTENIDO.nombre%TYPE,
+        p_anno_estreno  IN CONTENIDO.Año_estreno%TYPE,
+        p_duracion      IN CONTENIDO.duracion%TYPE,
+        p_pais          IN CONTENIDO.pais%TYPE,
+        p_genero        IN CONTENIDO.genero%TYPE,
+        p_sinopsis      IN CONTENIDO.sinopsis%TYPE,
+        p_clasificacion IN CONTENIDO.Clasificacion%TYPE,
+        p_etiqueta      IN CONTENIDO.nombre_etiqueta%TYPE,
+        p_presupuesto   IN PELICULA.presupuesto%TYPE,
+        p_recaudacion   IN PELICULA.recaudacion%TYPE
+    );
+
+    -- Agregar contenido base + serie
+    PROCEDURE agregar_serie(
+        p_id_content    IN CONTENIDO.Id_content%TYPE,
+        p_nombre        IN CONTENIDO.nombre%TYPE,
+        p_anno_estreno  IN CONTENIDO.Año_estreno%TYPE,
+        p_duracion      IN CONTENIDO.duracion%TYPE,
+        p_pais          IN CONTENIDO.pais%TYPE,
+        p_genero        IN CONTENIDO.genero%TYPE,
+        p_sinopsis      IN CONTENIDO.sinopsis%TYPE,
+        p_clasificacion IN CONTENIDO.Clasificacion%TYPE,
+        p_etiqueta      IN CONTENIDO.nombre_etiqueta%TYPE,
+        p_temporadas    IN SERIE.temporadas%TYPE,
+        p_episodios     IN SERIE.episodios%TYPE,
+        p_show_runner   IN SERIE.show_runner%TYPE
+    );
+
+    -- Consultar contenido por ID
+    PROCEDURE consultar_contenido(
+        p_id_content    IN  CONTENIDO.Id_content%TYPE,
+        p_nombre        OUT CONTENIDO.nombre%TYPE,
+        p_anno_estreno  OUT CONTENIDO.Año_estreno%TYPE,
+        p_genero        OUT CONTENIDO.genero%TYPE,
+        p_pais          OUT CONTENIDO.pais%TYPE,
+        p_clasificacion OUT CONTENIDO.Clasificacion%TYPE
+    );
+
+    -- Listar contenidos por género
+    FUNCTION listar_por_genero(
+        p_genero IN CONTENIDO.genero%TYPE
+    ) RETURN SYS_REFCURSOR;
+
+    -- Modificar sinopsis y clasificación de un contenido
+    PROCEDURE modificar_contenido(
+        p_id_content        IN CONTENIDO.Id_content%TYPE,
+        p_nueva_sinopsis     IN CONTENIDO.sinopsis%TYPE,
+        p_nueva_clasificacion IN CONTENIDO.Clasificacion%TYPE
+    );
+
+    -- Eliminar contenido por ID
+    PROCEDURE eliminar_contenido(
+        p_id_content IN CONTENIDO.Id_content%TYPE
+    );
+
+END PKG_CONTENIDO;
+/
+
+-- -----------------------------------------------------
+-- PAQUETE 3: PKG_CALIFICACIONES
+-- -----------------------------------------------------
+CREATE OR REPLACE PACKAGE PKG_CALIFICACIONES AS
+
+    -- Registrar una nueva calificación
+    PROCEDURE agregar_calificacion(
+        p_id_calificacion  IN Calificaciones.Id_calificacion%TYPE,
+        p_id_usuario       IN Calificaciones.Id_usuario%TYPE,
+        p_id_content       IN Calificaciones.Id_content%TYPE,
+        p_estrellas        IN Calificaciones.estrellas%TYPE,
+        p_fecha            IN Calificaciones.fecha_calificacion%TYPE
+    );
+
+    -- Consultar calificaciones de un contenido (retorna cursor)
+    FUNCTION consultar_por_contenido(
+        p_id_content IN Calificaciones.Id_content%TYPE
+    ) RETURN SYS_REFCURSOR;
+
+    -- Consultar historial de calificaciones de un usuario (retorna cursor)
+    FUNCTION historial_usuario(
+        p_id_usuario IN Calificaciones.Id_usuario%TYPE
+    ) RETURN SYS_REFCURSOR;
+
+    -- Modificar estrellas de una calificación existente
+    PROCEDURE modificar_calificacion(
+        p_id_calificacion IN Calificaciones.Id_calificacion%TYPE,
+        p_nuevas_estrellas IN Calificaciones.estrellas%TYPE
+    );
+
+    -- Eliminar una calificación por ID
+    PROCEDURE eliminar_calificacion(
+        p_id_calificacion IN Calificaciones.Id_calificacion%TYPE
+    );
+
+END PKG_CALIFICACIONES;
+/
+
+-- Verificar creación de especificaciones
+SELECT object_name, object_type, status
+FROM user_objects
+WHERE object_type = 'PACKAGE'
+  AND object_name IN ('PKG_USUARIOS', 'PKG_CONTENIDO', 'PKG_CALIFICACIONES')
+ORDER BY object_name;
+
+
+-- =====================================================
+-- SECCIÓN 25: IMPLEMENTACIÓN DE PAQUETES (CRUDI)
+-- =====================================================
+
+-- -----------------------------------------------------
+-- CUERPO PAQUETE 1: PKG_USUARIOS
+-- -----------------------------------------------------
+CREATE OR REPLACE PACKAGE BODY PKG_USUARIOS AS
+
+    -- Agregar un nuevo usuario
+    PROCEDURE agregar_usuario(
+        p_id_usuario      IN USUARIOS.Id_usuario%TYPE,
+        p_email           IN USUARIOS.Email%TYPE,
+        p_fecha_registro  IN USUARIOS.Fecha_registro%TYPE,
+        p_fecha_nac       IN USUARIOS.fecha_nacimiento%TYPE
+    ) IS
+    BEGIN
+        INSERT INTO USUARIOS (Id_usuario, Email, Fecha_registro, fecha_nacimiento)
+        VALUES (p_id_usuario, p_email, p_fecha_registro, p_fecha_nac);
+        COMMIT;
+        DBMS_OUTPUT.PUT_LINE('Usuario ' || p_id_usuario || ' agregado correctamente.');
+    EXCEPTION
+        WHEN DUP_VAL_ON_INDEX THEN
+            ROLLBACK;
+            DBMS_OUTPUT.PUT_LINE('ERROR: Ya existe un usuario con el ID o email proporcionado.');
+        WHEN OTHERS THEN
+            ROLLBACK;
+            DBMS_OUTPUT.PUT_LINE('ERROR al agregar usuario: ' || SQLERRM);
+    END agregar_usuario;
+
+    -- Consultar un usuario por ID
+    PROCEDURE consultar_usuario(
+        p_id_usuario      IN  USUARIOS.Id_usuario%TYPE,
+        p_email           OUT USUARIOS.Email%TYPE,
+        p_fecha_registro  OUT USUARIOS.Fecha_registro%TYPE,
+        p_fecha_nac       OUT USUARIOS.fecha_nacimiento%TYPE
+    ) IS
+    BEGIN
+        SELECT Email, Fecha_registro, fecha_nacimiento
+        INTO p_email, p_fecha_registro, p_fecha_nac
+        FROM USUARIOS
+        WHERE Id_usuario = p_id_usuario;
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN
+            DBMS_OUTPUT.PUT_LINE('ERROR: No existe el usuario ' || p_id_usuario || '.');
+        WHEN OTHERS THEN
+            DBMS_OUTPUT.PUT_LINE('ERROR al consultar usuario: ' || SQLERRM);
+    END consultar_usuario;
+
+    -- Listar todos los usuarios
+    FUNCTION listar_usuarios
+        RETURN SYS_REFCURSOR
+    IS
+        v_cursor SYS_REFCURSOR;
+    BEGIN
+        OPEN v_cursor FOR
+            SELECT Id_usuario, Email, Fecha_registro, fecha_nacimiento
+            FROM USUARIOS
+            ORDER BY Fecha_registro DESC;
+        RETURN v_cursor;
+    END listar_usuarios;
+
+    -- Modificar email de un usuario
+    PROCEDURE modificar_email(
+        p_id_usuario  IN USUARIOS.Id_usuario%TYPE,
+        p_nuevo_email IN USUARIOS.Email%TYPE
+    ) IS
+        v_count NUMBER;
+    BEGIN
+        SELECT COUNT(*) INTO v_count
+        FROM USUARIOS WHERE Id_usuario = p_id_usuario;
+
+        IF v_count = 0 THEN
+            DBMS_OUTPUT.PUT_LINE('ERROR: No existe el usuario ' || p_id_usuario || '.');
+        ELSE
+            UPDATE USUARIOS
+            SET Email = p_nuevo_email
+            WHERE Id_usuario = p_id_usuario;
+            COMMIT;
+            DBMS_OUTPUT.PUT_LINE('Email del usuario ' || p_id_usuario || ' actualizado correctamente.');
+        END IF;
+    EXCEPTION
+        WHEN OTHERS THEN
+            ROLLBACK;
+            DBMS_OUTPUT.PUT_LINE('ERROR al modificar usuario: ' || SQLERRM);
+    END modificar_email;
+
+    -- Eliminar un usuario por ID
+    PROCEDURE eliminar_usuario(
+        p_id_usuario IN USUARIOS.Id_usuario%TYPE
+    ) IS
+        v_count NUMBER;
+    BEGIN
+        SELECT COUNT(*) INTO v_count
+        FROM USUARIOS WHERE Id_usuario = p_id_usuario;
+
+        IF v_count = 0 THEN
+            DBMS_OUTPUT.PUT_LINE('ERROR: No existe el usuario ' || p_id_usuario || '.');
+        ELSE
+            DELETE FROM USUARIOS WHERE Id_usuario = p_id_usuario;
+            COMMIT;
+            DBMS_OUTPUT.PUT_LINE('Usuario ' || p_id_usuario || ' eliminado. Reseñas y calificaciones conservadas de forma anónima.');
+        END IF;
+    EXCEPTION
+        WHEN OTHERS THEN
+            ROLLBACK;
+            DBMS_OUTPUT.PUT_LINE('ERROR al eliminar usuario: ' || SQLERRM);
+    END eliminar_usuario;
+
+END PKG_USUARIOS;
+/
+
+-- -----------------------------------------------------
+-- CUERPO PAQUETE 2: PKG_CONTENIDO
+-- -----------------------------------------------------
+CREATE OR REPLACE PACKAGE BODY PKG_CONTENIDO AS
+
+    -- Agregar película
+    PROCEDURE agregar_pelicula(
+        p_id_content    IN CONTENIDO.Id_content%TYPE,
+        p_nombre        IN CONTENIDO.nombre%TYPE,
+        p_anno_estreno  IN CONTENIDO.Año_estreno%TYPE,
+        p_duracion      IN CONTENIDO.duracion%TYPE,
+        p_pais          IN CONTENIDO.pais%TYPE,
+        p_genero        IN CONTENIDO.genero%TYPE,
+        p_sinopsis      IN CONTENIDO.sinopsis%TYPE,
+        p_clasificacion IN CONTENIDO.Clasificacion%TYPE,
+        p_etiqueta      IN CONTENIDO.nombre_etiqueta%TYPE,
+        p_presupuesto   IN PELICULA.presupuesto%TYPE,
+        p_recaudacion   IN PELICULA.recaudacion%TYPE
+    ) IS
+    BEGIN
+        INSERT INTO CONTENIDO (Id_content, nombre, Año_estreno, duracion, pais, genero, sinopsis, Clasificacion, nombre_etiqueta)
+        VALUES (p_id_content, p_nombre, p_anno_estreno, p_duracion, p_pais, p_genero, p_sinopsis, p_clasificacion, p_etiqueta);
+
+        INSERT INTO PELICULA (Id_content, presupuesto, recaudacion)
+        VALUES (p_id_content, p_presupuesto, p_recaudacion);
+
+        COMMIT;
+        DBMS_OUTPUT.PUT_LINE('Película ' || p_nombre || ' agregada correctamente.');
+    EXCEPTION
+        WHEN DUP_VAL_ON_INDEX THEN
+            ROLLBACK;
+            DBMS_OUTPUT.PUT_LINE('ERROR: Ya existe contenido con el ID ' || p_id_content || '.');
+        WHEN OTHERS THEN
+            ROLLBACK;
+            DBMS_OUTPUT.PUT_LINE('ERROR al agregar película: ' || SQLERRM);
+    END agregar_pelicula;
+
+    -- Agregar serie
+    PROCEDURE agregar_serie(
+        p_id_content    IN CONTENIDO.Id_content%TYPE,
+        p_nombre        IN CONTENIDO.nombre%TYPE,
+        p_anno_estreno  IN CONTENIDO.Año_estreno%TYPE,
+        p_duracion      IN CONTENIDO.duracion%TYPE,
+        p_pais          IN CONTENIDO.pais%TYPE,
+        p_genero        IN CONTENIDO.genero%TYPE,
+        p_sinopsis      IN CONTENIDO.sinopsis%TYPE,
+        p_clasificacion IN CONTENIDO.Clasificacion%TYPE,
+        p_etiqueta      IN CONTENIDO.nombre_etiqueta%TYPE,
+        p_temporadas    IN SERIE.temporadas%TYPE,
+        p_episodios     IN SERIE.episodios%TYPE,
+        p_show_runner   IN SERIE.show_runner%TYPE
+    ) IS
+    BEGIN
+        INSERT INTO CONTENIDO (Id_content, nombre, Año_estreno, duracion, pais, genero, sinopsis, Clasificacion, nombre_etiqueta)
+        VALUES (p_id_content, p_nombre, p_anno_estreno, p_duracion, p_pais, p_genero, p_sinopsis, p_clasificacion, p_etiqueta);
+
+        INSERT INTO SERIE (Id_content, temporadas, episodios, show_runner)
+        VALUES (p_id_content, p_temporadas, p_episodios, p_show_runner);
+
+        COMMIT;
+        DBMS_OUTPUT.PUT_LINE('Serie ' || p_nombre || ' agregada correctamente.');
+    EXCEPTION
+        WHEN DUP_VAL_ON_INDEX THEN
+            ROLLBACK;
+            DBMS_OUTPUT.PUT_LINE('ERROR: Ya existe contenido con el ID ' || p_id_content || '.');
+        WHEN OTHERS THEN
+            ROLLBACK;
+            DBMS_OUTPUT.PUT_LINE('ERROR al agregar serie: ' || SQLERRM);
+    END agregar_serie;
+
+    -- Consultar contenido por ID
+    PROCEDURE consultar_contenido(
+        p_id_content    IN  CONTENIDO.Id_content%TYPE,
+        p_nombre        OUT CONTENIDO.nombre%TYPE,
+        p_anno_estreno  OUT CONTENIDO.Año_estreno%TYPE,
+        p_genero        OUT CONTENIDO.genero%TYPE,
+        p_pais          OUT CONTENIDO.pais%TYPE,
+        p_clasificacion OUT CONTENIDO.Clasificacion%TYPE
+    ) IS
+    BEGIN
+        SELECT nombre, Año_estreno, genero, pais, Clasificacion
+        INTO p_nombre, p_anno_estreno, p_genero, p_pais, p_clasificacion
+        FROM CONTENIDO
+        WHERE Id_content = p_id_content;
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN
+            DBMS_OUTPUT.PUT_LINE('ERROR: No existe el contenido ' || p_id_content || '.');
+        WHEN OTHERS THEN
+            DBMS_OUTPUT.PUT_LINE('ERROR al consultar contenido: ' || SQLERRM);
+    END consultar_contenido;
+
+    -- Listar por género
+    FUNCTION listar_por_genero(
+        p_genero IN CONTENIDO.genero%TYPE
+    ) RETURN SYS_REFCURSOR IS
+        v_cursor SYS_REFCURSOR;
+    BEGIN
+        OPEN v_cursor FOR
+            SELECT Id_content, nombre, Año_estreno, pais, Clasificacion
+            FROM CONTENIDO
+            WHERE genero = p_genero
+            ORDER BY Año_estreno DESC;
+        RETURN v_cursor;
+    END listar_por_genero;
+
+    -- Modificar sinopsis y clasificación
+    PROCEDURE modificar_contenido(
+        p_id_content          IN CONTENIDO.Id_content%TYPE,
+        p_nueva_sinopsis       IN CONTENIDO.sinopsis%TYPE,
+        p_nueva_clasificacion  IN CONTENIDO.Clasificacion%TYPE
+    ) IS
+        v_count NUMBER;
+    BEGIN
+        SELECT COUNT(*) INTO v_count
+        FROM CONTENIDO WHERE Id_content = p_id_content;
+
+        IF v_count = 0 THEN
+            DBMS_OUTPUT.PUT_LINE('ERROR: No existe el contenido ' || p_id_content || '.');
+        ELSE
+            UPDATE CONTENIDO
+            SET sinopsis       = p_nueva_sinopsis,
+                Clasificacion  = p_nueva_clasificacion
+            WHERE Id_content = p_id_content;
+            COMMIT;
+            DBMS_OUTPUT.PUT_LINE('Contenido ' || p_id_content || ' modificado correctamente.');
+        END IF;
+    EXCEPTION
+        WHEN OTHERS THEN
+            ROLLBACK;
+            DBMS_OUTPUT.PUT_LINE('ERROR al modificar contenido: ' || SQLERRM);
+    END modificar_contenido;
+
+    -- Eliminar contenido
+    PROCEDURE eliminar_contenido(
+        p_id_content IN CONTENIDO.Id_content%TYPE
+    ) IS
+        v_count NUMBER;
+    BEGIN
+        SELECT COUNT(*) INTO v_count
+        FROM CONTENIDO WHERE Id_content = p_id_content;
+
+        IF v_count = 0 THEN
+            DBMS_OUTPUT.PUT_LINE('ERROR: No existe el contenido ' || p_id_content || '.');
+        ELSE
+            DELETE FROM CONTENIDO WHERE Id_content = p_id_content;
+            COMMIT;
+            DBMS_OUTPUT.PUT_LINE('Contenido ' || p_id_content || ' eliminado. Dependencias eliminadas en cascada.');
+        END IF;
+    EXCEPTION
+        WHEN OTHERS THEN
+            ROLLBACK;
+            DBMS_OUTPUT.PUT_LINE('ERROR al eliminar contenido: ' || SQLERRM);
+    END eliminar_contenido;
+
+END PKG_CONTENIDO;
+/
+
+-- -----------------------------------------------------
+-- CUERPO PAQUETE 3: PKG_CALIFICACIONES
+-- -----------------------------------------------------
+CREATE OR REPLACE PACKAGE BODY PKG_CALIFICACIONES AS
+
+    -- Registrar calificación
+    PROCEDURE agregar_calificacion(
+        p_id_calificacion  IN Calificaciones.Id_calificacion%TYPE,
+        p_id_usuario       IN Calificaciones.Id_usuario%TYPE,
+        p_id_content       IN Calificaciones.Id_content%TYPE,
+        p_estrellas        IN Calificaciones.estrellas%TYPE,
+        p_fecha            IN Calificaciones.fecha_calificacion%TYPE
+    ) IS
+    BEGIN
+        INSERT INTO Calificaciones (Id_calificacion, Id_usuario, Id_content, estrellas, fecha_calificacion)
+        VALUES (p_id_calificacion, p_id_usuario, p_id_content, p_estrellas, p_fecha);
+        COMMIT;
+        DBMS_OUTPUT.PUT_LINE('Calificación ' || p_id_calificacion || ' registrada correctamente.');
+    EXCEPTION
+        WHEN DUP_VAL_ON_INDEX THEN
+            ROLLBACK;
+            DBMS_OUTPUT.PUT_LINE('ERROR: Ya existe una calificación con ese ID.');
+        WHEN OTHERS THEN
+            ROLLBACK;
+            DBMS_OUTPUT.PUT_LINE('ERROR al registrar calificación: ' || SQLERRM);
+    END agregar_calificacion;
+
+    -- Consultar calificaciones de un contenido
+    FUNCTION consultar_por_contenido(
+        p_id_content IN Calificaciones.Id_content%TYPE
+    ) RETURN SYS_REFCURSOR IS
+        v_cursor SYS_REFCURSOR;
+    BEGIN
+        OPEN v_cursor FOR
+            SELECT
+                cal.Id_calificacion,
+                cal.Id_usuario,
+                cal.estrellas,
+                cal.fecha_calificacion,
+                ROUND(AVG(cal.estrellas) OVER (PARTITION BY cal.Id_content), 2) AS promedio_contenido
+            FROM Calificaciones cal
+            WHERE cal.Id_content = p_id_content
+            ORDER BY cal.fecha_calificacion DESC;
+        RETURN v_cursor;
+    END consultar_por_contenido;
+
+    -- Historial de calificaciones de un usuario
+    FUNCTION historial_usuario(
+        p_id_usuario IN Calificaciones.Id_usuario%TYPE
+    ) RETURN SYS_REFCURSOR IS
+        v_cursor SYS_REFCURSOR;
+    BEGIN
+        OPEN v_cursor FOR
+            SELECT
+                cal.Id_calificacion,
+                cal.Id_content,
+                c.nombre AS nombre_contenido,
+                cal.estrellas,
+                cal.fecha_calificacion
+            FROM Calificaciones cal
+            LEFT JOIN CONTENIDO c ON cal.Id_content = c.Id_content
+            WHERE cal.Id_usuario = p_id_usuario
+            ORDER BY cal.fecha_calificacion DESC;
+        RETURN v_cursor;
+    END historial_usuario;
+
+    -- Modificar estrellas
+    PROCEDURE modificar_calificacion(
+        p_id_calificacion  IN Calificaciones.Id_calificacion%TYPE,
+        p_nuevas_estrellas IN Calificaciones.estrellas%TYPE
+    ) IS
+        v_count NUMBER;
+    BEGIN
+        SELECT COUNT(*) INTO v_count
+        FROM Calificaciones WHERE Id_calificacion = p_id_calificacion;
+
+        IF v_count = 0 THEN
+            DBMS_OUTPUT.PUT_LINE('ERROR: No existe la calificación ' || p_id_calificacion || '.');
+        ELSE
+            UPDATE Calificaciones
+            SET estrellas = p_nuevas_estrellas
+            WHERE Id_calificacion = p_id_calificacion;
+            COMMIT;
+            DBMS_OUTPUT.PUT_LINE('Calificación ' || p_id_calificacion || ' actualizada a ' || p_nuevas_estrellas || ' estrellas.');
+        END IF;
+    EXCEPTION
+        WHEN OTHERS THEN
+            ROLLBACK;
+            DBMS_OUTPUT.PUT_LINE('ERROR al modificar calificación: ' || SQLERRM);
+    END modificar_calificacion;
+
+    -- Eliminar calificación
+    PROCEDURE eliminar_calificacion(
+        p_id_calificacion IN Calificaciones.Id_calificacion%TYPE
+    ) IS
+        v_count NUMBER;
+    BEGIN
+        SELECT COUNT(*) INTO v_count
+        FROM Calificaciones WHERE Id_calificacion = p_id_calificacion;
+
+        IF v_count = 0 THEN
+            DBMS_OUTPUT.PUT_LINE('ERROR: No existe la calificación ' || p_id_calificacion || '.');
+        ELSE
+            DELETE FROM Calificaciones WHERE Id_calificacion = p_id_calificacion;
+            COMMIT;
+            DBMS_OUTPUT.PUT_LINE('Calificación ' || p_id_calificacion || ' eliminada correctamente.');
+        END IF;
+    EXCEPTION
+        WHEN OTHERS THEN
+            ROLLBACK;
+            DBMS_OUTPUT.PUT_LINE('ERROR al eliminar calificación: ' || SQLERRM);
+    END eliminar_calificacion;
+
+END PKG_CALIFICACIONES;
+/
+
+-- Verificar compilación de cuerpos
+SELECT object_name, object_type, status
+FROM user_objects
+WHERE object_type = 'PACKAGE BODY'
+  AND object_name IN ('PKG_USUARIOS', 'PKG_CONTENIDO', 'PKG_CALIFICACIONES')
+ORDER BY object_name;
+
+
+-- =====================================================
+-- SECCIÓN 26: PRUEBAS VÁLIDAS DE PAQUETES (CRUDOK)
+-- =====================================================
+
+-- Activar salida de mensajes
+SET SERVEROUTPUT ON;
+
+-- -------------------------------------------------------
+-- PRUEBAS PKG_USUARIOS
+-- -------------------------------------------------------
+
+-- OK-U1: Agregar usuario válido (25 años al registrarse)
+EXEC PKG_USUARIOS.agregar_usuario('user_p01', 'pedro_pkg@example.com', DATE '2023-05-10', DATE '1998-02-14');
+
+-- OK-U2: Consultar usuario recién creado
+DECLARE
+    v_email          USUARIOS.Email%TYPE;
+    v_fecha_reg      USUARIOS.Fecha_registro%TYPE;
+    v_fecha_nac      USUARIOS.fecha_nacimiento%TYPE;
+BEGIN
+    PKG_USUARIOS.consultar_usuario('user_p01', v_email, v_fecha_reg, v_fecha_nac);
+    DBMS_OUTPUT.PUT_LINE('Email: ' || v_email);
+    DBMS_OUTPUT.PUT_LINE('Fecha registro: ' || TO_CHAR(v_fecha_reg, 'DD/MM/YYYY'));
+    DBMS_OUTPUT.PUT_LINE('Fecha nacimiento: ' || TO_CHAR(v_fecha_nac, 'DD/MM/YYYY'));
+END;
+/
+
+-- OK-U3: Modificar email
+EXEC PKG_USUARIOS.modificar_email('user_p01', 'pedro_nuevo@example.com');
+
+-- OK-U4: Eliminar usuario (reseñas y calificaciones quedan anónimas)
+EXEC PKG_USUARIOS.eliminar_usuario('user_p01');
+
+
+-- -------------------------------------------------------
+-- PRUEBAS PKG_CONTENIDO
+-- -------------------------------------------------------
+
+-- OK-C1: Agregar película válida
+EXEC PKG_CONTENIDO.agregar_pelicula(
+    'cont_p01', 'El Gran Lebowski', 1998, 117,
+    'USA', 'Comedia',
+    'Un hombre confundido con otro se ve envuelto en un caso de secuestro.',
+    'R', 'cult',
+    15000000, 46200000
+);
+
+-- OK-C2: Agregar serie válida
+EXEC PKG_CONTENIDO.agregar_serie(
+    'cont_p02', 'Severance', 2022, 52,
+    'USA', 'Drama',
+    'Trabajadores se someten a un procedimiento que separa sus memorias laborales de las personales.',
+    'TV-MA', 'distopia',
+    3, 19, 'Dan Erickson'
+);
+
+-- OK-C3: Consultar contenido
+DECLARE
+    v_nombre   CONTENIDO.nombre%TYPE;
+    v_anno     CONTENIDO.Año_estreno%TYPE;
+    v_genero   CONTENIDO.genero%TYPE;
+    v_pais     CONTENIDO.pais%TYPE;
+    v_clasif   CONTENIDO.Clasificacion%TYPE;
+BEGIN
+    PKG_CONTENIDO.consultar_contenido('cont_p01', v_nombre, v_anno, v_genero, v_pais, v_clasif);
+    DBMS_OUTPUT.PUT_LINE('Nombre: ' || v_nombre);
+    DBMS_OUTPUT.PUT_LINE('Año: ' || v_anno || ' | Género: ' || v_genero);
+    DBMS_OUTPUT.PUT_LINE('País: ' || v_pais || ' | Clasificación: ' || v_clasif);
+END;
+/
+
+-- OK-C4: Modificar contenido
+EXEC PKG_CONTENIDO.modificar_contenido(
+    'cont_p01',
+    'Un hombre apodado "El Nota" se ve involucrado en un enredo tras el robo de su alfombra.',
+    'R'
+);
+
+-- OK-C5: Eliminar contenido
+EXEC PKG_CONTENIDO.eliminar_contenido('cont_p02');
+
+
+-- -------------------------------------------------------
+-- PRUEBAS PKG_CALIFICACIONES
+-- -------------------------------------------------------
+
+-- Datos de apoyo
+INSERT INTO USUARIOS (Id_usuario, Email, Fecha_registro, fecha_nacimiento)
+VALUES ('user_p02', 'lucia_pkg@example.com', DATE '2022-01-15', DATE '1996-09-30');
+COMMIT;
+
+-- OK-CA1: Agregar calificación válida
+EXEC PKG_CALIFICACIONES.agregar_calificacion('calif_p01', 'user_p02', 'cont_p01', 4, SYSDATE);
+
+-- OK-CA2: Modificar calificación
+EXEC PKG_CALIFICACIONES.modificar_calificacion('calif_p01', 5);
+
+-- OK-CA3: Eliminar calificación
+EXEC PKG_CALIFICACIONES.eliminar_calificacion('calif_p01');
+
+-- Limpieza datos de apoyo
+EXEC PKG_USUARIOS.eliminar_usuario('user_p02');
+EXEC PKG_CONTENIDO.eliminar_contenido('cont_p01');
+
+COMMIT;
+
+
+-- =====================================================
+-- SECCIÓN 27: PRUEBAS INVÁLIDAS DE PAQUETES (CRUDNoOK)
+-- =====================================================
+
+-- NoOK-U1: Agregar usuario menor de 13 años (falla por trigger trg_validar_edad_registro)
+-- EXEC PKG_USUARIOS.agregar_usuario('user_nok_p1', 'menor_pkg@example.com', DATE '2024-01-01', DATE '2015-06-20');
+-- ERROR ESPERADO: ORA-20001 - El usuario debe tener al menos 13 años.
+
+-- NoOK-U2: Agregar usuario con email duplicado (falla por UNIQUE Email)
+-- EXEC PKG_USUARIOS.agregar_usuario('user_nok_p2', 'esteban@example.com', DATE '2022-01-01', DATE '1995-03-10');
+-- ERROR ESPERADO: ERROR: Ya existe un usuario con el ID o email proporcionado.
+
+-- NoOK-U3: Consultar usuario inexistente
+-- DECLARE
+--     v_email     USUARIOS.Email%TYPE;
+--     v_freg      USUARIOS.Fecha_registro%TYPE;
+--     v_fnac      USUARIOS.fecha_nacimiento%TYPE;
+-- BEGIN
+--     PKG_USUARIOS.consultar_usuario('user_inexistente', v_email, v_freg, v_fnac);
+-- END;
+-- /
+-- ERROR ESPERADO: ERROR: No existe el usuario user_inexistente.
+
+-- NoOK-C1: Agregar película con año anterior a 1895 (falla por trigger trg_anno_estreno_valido)
+-- EXEC PKG_CONTENIDO.agregar_pelicula(
+--     'cont_nok_p1', 'Película Imposible', 1800, 90,
+--     'Francia', 'Drama', 'Una sinopsis cualquiera.', 'NR', 'test',
+--     0, 0
+-- );
+-- ERROR ESPERADO: ORA-20006 - El año de estreno debe estar entre 1895 y el año actual.
+
+-- NoOK-C2: Agregar serie con episodios menores que temporadas (falla por chk_episodios_vs_temporadas)
+-- EXEC PKG_CONTENIDO.agregar_serie(
+--     'cont_nok_p2', 'Serie Inválida', 2020, 45,
+--     'USA', 'Drama', 'Sinopsis de prueba.', 'TV-14', 'test',
+--     10, 3, 'Test Runner'
+-- );
+-- ERROR ESPERADO: ORA-02290 - check constraint (chk_episodios_vs_temporadas) violated.
+
+-- NoOK-CA1: Calificación duplicada (falla por trigger trg_una_calificacion_por_contenido)
+-- (Requiere que calif_001 ya exista: user_001 calificó cont_002)
+-- EXEC PKG_CALIFICACIONES.agregar_calificacion('calif_nok_p1', 'user_001', 'cont_002', 3, SYSDATE);
+-- ERROR ESPERADO: ORA-20007 - El usuario ya registró una calificación para este contenido.
+
+-- NoOK-CA2: Calificación con estrellas fuera de rango (falla por chk_estrellas)
+-- EXEC PKG_CALIFICACIONES.agregar_calificacion('calif_nok_p2', 'user_003', 'cont_001', 7, SYSDATE);
+-- ERROR ESPERADO: ORA-02290 - check constraint (chk_estrellas) violated.
+
+-- NoOK-CA3: Modificar calificación inexistente
+-- EXEC PKG_CALIFICACIONES.modificar_calificacion('calif_inexistente', 4);
+-- ERROR ESPERADO: ERROR: No existe la calificación calif_inexistente.
+
+COMMIT;
+
+
+-- =====================================================
+-- SECCIÓN 28: ELIMINACIÓN DE PAQUETES (XCRUD)
+-- =====================================================
+
+-- DROP PACKAGE PKG_USUARIOS;
+-- DROP PACKAGE PKG_CONTENIDO;
+-- DROP PACKAGE PKG_CALIFICACIONES;
+
+-- Verificar eliminación (debe retornar 0 filas)
+-- SELECT object_name, object_type, status
+-- FROM user_objects
+-- WHERE object_type IN ('PACKAGE', 'PACKAGE BODY')
+--   AND object_name IN ('PKG_USUARIOS', 'PKG_CONTENIDO', 'PKG_CALIFICACIONES')
+-- ORDER BY object_name;
+
+
  
 -- =====================================================
 -- FIN DEL SCRIPT EGO_Completo.sql
